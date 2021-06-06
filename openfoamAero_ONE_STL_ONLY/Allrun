@@ -1,0 +1,73 @@
+#!/bin/bash
+cd ${0%/*} || exit 1    # Run from this directory
+
+# Source tutorial run functions
+. $WM_PROJECT_DIR/bin/tools/RunFunctions
+
+
+NUMFOILS=40
+
+i="0"
+while [ $i -lt 1000 ]
+do
+    echo "Iteration ${i}"
+
+    # need to find all instances of "foil" and replace with "foil$i"
+    sed -i "s/foil/foil${i}/g" 0/k
+    sed -i "s/foil/foil${i}/g" 0/nut
+    sed -i "s/foil/foil${i}/g" 0/omega
+    sed -i "s/foil/foil${i}/g" 0/p
+    sed -i "s/foil/foil${i}/g" 0/U.orig
+    sed -i "s/foil/foil${i}/g" Allclean
+    sed -i "s/foil/foil${i}/g" system/forceCoeffs
+    sed -i "s/foil/foil${i}/g" system/snappyHexMeshDict
+    sed -i "s/foil/foil${i}/g" system/surfaceFeaturesDict
+
+    cp /mnt/c/Users/444in/Documents/xpsProgramming/r_nn_phy/foilGeoms/$i.stl constant/triSurface/
+
+    runApplication surfaceTransformPoints -yawPitchRoll "(0 0 90)" constant/triSurface/$i.stl constant/triSurface/tmpFoil.stl
+    rm log.surfaceTransformPoints
+    runApplication surfaceTransformPoints -translate "(0 0 3)" constant/triSurface/tmpFoil.stl constant/triSurface/tmpFoil2.stl
+    rm constant/triSurface/$i.stl
+    rm constant/triSurface/tmpFoil.stl
+    mv constant/triSurface/tmpFoil2.stl constant/triSurface/foil$i.stl
+
+    runApplication surfaceFeatures
+    runApplication blockMesh
+    runApplication decomposePar -copyZero
+    runParallel snappyHexMesh -overwrite
+    runParallel patchSummary
+    runParallel potentialFoam
+    runParallel simpleFoam
+    runApplication reconstructParMesh -constant
+    runApplication reconstructPar -latestTime
+
+    #runApplication foamToVTK
+
+    # grab the last lift coefficient and store it in a csv
+    lastLine=$( tail -n 1 postProcessing/forceCoeffs1/0/forceCoeffs.dat)
+    echo $lastLine
+    lineArray=($lastLine)
+    cl=${lineArray[3]}
+    echo $cl
+    echo $cl >> /mnt/c/Users/444in/Documents/xpsProgramming/r_nn_phy/clData.csv
+
+    # clear out the case
+    ./Allclean
+
+    # turn everything back to plain "foil" for the next interation, note this is AFTER cleaning
+    sed -i "s/foil${i}/foil/g" 0/k
+    sed -i "s/foil${i}/foil/g" 0/nut
+    sed -i "s/foil${i}/foil/g" 0/omega
+    sed -i "s/foil${i}/foil/g" 0/p
+    sed -i "s/foil${i}/foil/g" 0/U.orig
+    sed -i "s/foil${i}/foil/g" Allclean
+    sed -i "s/foil${i}/foil/g" system/forceCoeffs
+    sed -i "s/foil${i}/foil/g" system/snappyHexMeshDict
+    sed -i "s/foil${i}/foil/g" system/surfaceFeaturesDict
+
+    i=$[$i+1]
+done
+
+
+#------------------------------------------------------------------------------
